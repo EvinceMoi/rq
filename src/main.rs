@@ -1,5 +1,6 @@
 mod logger;
 mod app;
+mod capture;
 
 use log::debug;
 

@@ -1,5 +1,6 @@
 use anyhow::Result;
-use log::debug;
+use image::RgbaImage;
+use log::{debug, error};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
@@ -40,6 +41,8 @@ use wayland_client::{
     },
     Connection, Dispatch, Proxy, QueueHandle,
 };
+
+use crate::capture;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 struct Pos {
@@ -142,23 +145,23 @@ struct LayerState {
     selection: Selection,
     last_draw: Instant,
 }
-impl LayerState {
-    pub fn image(&mut self) {
-        self.selection.to_region().map(|region| {
-            self.layer.iter()
-                .map(|ctx| {
-                    ctx.region.intersect(&region)
-                        // .map(|rect| {
-                        //     ctx.pixmap.clone_rect(rect)
-                        // })
-                        // .flatten()
-                })
-                .for_each(|rect| {
-                    debug!("intersection: {:?}", rect);
-                })
-        });
-    }
-}
+// impl LayerState {
+//     pub fn image(&mut self) {
+//         self.selection.to_region().map(|region| {
+//             self.layer.iter()
+//                 .map(|ctx| {
+//                     ctx.region.intersect(&region)
+//                         // .map(|rect| {
+//                         //     ctx.pixmap.clone_rect(rect)
+//                         // })
+//                         // .flatten()
+//                 })
+//                 .for_each(|rect| {
+//                     debug!("intersection: {:?}", rect);
+//                 })
+//         });
+//     }
+// }
 impl LayerState {
     pub fn draw(&mut self, qh: &QueueHandle<Self>, surface: &WlSurface) {
         self.last_draw = Instant::now();
@@ -540,7 +543,33 @@ pub fn run() -> Result<()> {
     }
     let region = layer_state.selection.to_region();
     debug!("got region: {:?}", region);
-    layer_state.image();
+
+    region.map(|area| {
+        let capture = futures::executor::block_on(async {
+            capture::area(area.x(), area.y(), area.width(), area.height()).await
+        });
+        match capture {
+            Ok(raw) => Some(raw),
+            Err(e) => {
+                error!("capture error: {e}");
+                None
+            },
+        }
+    })
+    .flatten()
+    .map(|raw| {
+        RgbaImage::from_vec(raw.width, raw.height, raw.buf)
+    })
+    .flatten()
+    .map(|img| {
+        let decoder = bardecoder::default_decoder();
+        for result in decoder.decode(&img) {
+            match result {
+                Ok(decoded) => debug!("decoded: {decoded}"),
+                Err(_) => {},
+            }
+        }
+    });
 
     Ok(())
 }
