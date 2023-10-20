@@ -21,25 +21,23 @@ use smithay_client_toolkit::{
         WaylandSurface,
     },
     shm::{
-        slot::{Slot, SlotPool},
+        slot::SlotPool,
         Shm, ShmHandler,
     },
 };
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 use tiny_skia::{Color, Pixmap, IntRect};
 use wayland_client::{
     globals::registry_queue_init,
     protocol::{
-        wl_compositor::{self, WlCompositor},
         wl_keyboard::WlKeyboard,
         wl_output::{Transform, WlOutput},
         wl_pointer::WlPointer,
-        wl_registry::{self, WlRegistry},
         wl_seat::WlSeat,
         wl_shm,
         wl_surface::WlSurface,
     },
-    Connection, Dispatch, Proxy, QueueHandle,
+    Connection, Proxy, QueueHandle,
 };
 
 use crate::capture;
@@ -48,11 +46,6 @@ use crate::capture;
 struct Pos {
     x: i32,
     y: i32,
-}
-impl Pos {
-    fn new(x: i32, y: i32) -> Self {
-        Self { x, y }
-    }
 }
 
 type Region = IntRect;
@@ -145,23 +138,6 @@ struct LayerState {
     selection: Selection,
     last_draw: Instant,
 }
-// impl LayerState {
-//     pub fn image(&mut self) {
-//         self.selection.to_region().map(|region| {
-//             self.layer.iter()
-//                 .map(|ctx| {
-//                     ctx.region.intersect(&region)
-//                         // .map(|rect| {
-//                         //     ctx.pixmap.clone_rect(rect)
-//                         // })
-//                         // .flatten()
-//                 })
-//                 .for_each(|rect| {
-//                     debug!("intersection: {:?}", rect);
-//                 })
-//         });
-//     }
-// }
 impl LayerState {
     pub fn draw(&mut self, qh: &QueueHandle<Self>, surface: &WlSurface) {
         self.last_draw = Instant::now();
@@ -236,23 +212,23 @@ delegate_compositor!(LayerState);
 impl CompositorHandler for LayerState {
     fn scale_factor_changed(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        surface: &WlSurface,
-        new_factor: i32,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &WlSurface,
+        _new_factor: i32,
     ) {
     }
 
     fn transform_changed(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        surface: &WlSurface,
-        new_transform: Transform,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &WlSurface,
+        _new_transform: Transform,
     ) {
     }
 
-    fn frame(&mut self, conn: &Connection, qh: &QueueHandle<Self>, surface: &WlSurface, time: u32) {
+    fn frame(&mut self, _conn: &Connection, qh: &QueueHandle<Self>, surface: &WlSurface, _time: u32) {
         // frame callback
         self.selection.update(self.pos_current);
 
@@ -276,13 +252,13 @@ impl OutputHandler for LayerState {
         &mut self.output_state
     }
 
-    fn new_output(&mut self, conn: &Connection, qh: &QueueHandle<Self>, output: WlOutput) {
+    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {
         // self.outputs.push(output);
     }
 
-    fn update_output(&mut self, conn: &Connection, qh: &QueueHandle<Self>, output: WlOutput) {}
+    fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {}
 
-    fn output_destroyed(&mut self, conn: &Connection, qh: &QueueHandle<Self>, output: WlOutput) {}
+    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {}
 }
 
 delegate_shm!(LayerState);
@@ -293,17 +269,17 @@ impl ShmHandler for LayerState {
 }
 delegate_layer!(LayerState);
 impl LayerShellHandler for LayerState {
-    fn closed(&mut self, conn: &Connection, qh: &QueueHandle<Self>, layer: &LayerSurface) {
+    fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _layer: &LayerSurface) {
         // todo!()
     }
 
     fn configure(
         &mut self,
-        conn: &Connection,
+        _conn: &Connection,
         qh: &QueueHandle<Self>,
         layer: &LayerSurface,
-        configure: LayerSurfaceConfigure,
-        serial: u32,
+        _configure: LayerSurfaceConfigure,
+        _serial: u32,
     ) {
         // start firer draw here
         self.draw(qh, layer.wl_surface());
@@ -315,11 +291,11 @@ impl SeatHandler for LayerState {
         &mut self.seat_state
     }
 
-    fn new_seat(&mut self, conn: &Connection, qh: &QueueHandle<Self>, seat: WlSeat) {}
+    fn new_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _seat: WlSeat) {}
 
     fn new_capability(
         &mut self,
-        conn: &Connection,
+        _conn: &Connection,
         qh: &QueueHandle<Self>,
         seat: WlSeat,
         capability: Capability,
@@ -342,9 +318,9 @@ impl SeatHandler for LayerState {
 
     fn remove_capability(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        seat: WlSeat,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: WlSeat,
         capability: Capability,
     ) {
         if capability == Capability::Keyboard && self.keyboard.is_some() {
@@ -358,39 +334,39 @@ impl SeatHandler for LayerState {
         }
     }
 
-    fn remove_seat(&mut self, conn: &Connection, qh: &QueueHandle<Self>, seat: WlSeat) {}
+    fn remove_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _seat: WlSeat) {}
 }
 
 delegate_keyboard!(LayerState);
 impl KeyboardHandler for LayerState {
     fn enter(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        keyboard: &WlKeyboard,
-        surface: &WlSurface,
-        serial: u32,
-        raw: &[u32],
-        keysyms: &[Keysym],
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _surface: &WlSurface,
+        _serial: u32,
+        _raw: &[u32],
+        _keysyms: &[Keysym],
     ) {
     }
 
     fn leave(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
-        surface: &wayland_client::protocol::wl_surface::WlSurface,
-        serial: u32,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
+        _surface: &wayland_client::protocol::wl_surface::WlSurface,
+        _serial: u32,
     ) {
     }
 
     fn press_key(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        keyboard: &WlKeyboard,
-        serial: u32,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _serial: u32,
         event: KeyEvent,
     ) {
         if event.keysym == Keysym::Escape {
@@ -400,21 +376,21 @@ impl KeyboardHandler for LayerState {
 
     fn release_key(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
-        serial: u32,
-        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
+        _serial: u32,
+        _event: smithay_client_toolkit::seat::keyboard::KeyEvent,
     ) {
     }
 
     fn update_modifiers(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
-        serial: u32,
-        modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
+        _serial: u32,
+        _modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
     ) {
     }
 }
@@ -422,9 +398,9 @@ delegate_pointer!(LayerState);
 impl PointerHandler for LayerState {
     fn pointer_frame(
         &mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
-        pointer: &WlPointer,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _pointer: &WlPointer,
         events: &[PointerEvent],
     ) {
         use PointerEventKind::*;
