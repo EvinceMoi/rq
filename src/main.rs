@@ -3,7 +3,7 @@ mod logger;
 mod selection;
 
 use anyhow::{anyhow, Result};
-use image::RgbaImage;
+use image::{RgbaImage, DynamicImage};
 
 use crate::selection::wait_for_selection;
 
@@ -21,16 +21,12 @@ fn main() -> Result<()> {
     // read image
     let image = RgbaImage::from_vec(captured.width, captured.height, captured.buf)
         .ok_or(anyhow!("failed to read image"))?;
+    let luma = DynamicImage::from(image).to_luma8();
 
-    // decode
-    let decoder = bardecoder::default_decoder();
-    for result in decoder.decode(&image) {
-        match result {
-            Ok(decoded) => {
-                println!("{decoded}");
-            }
-            Err(_) => {}
-        }
+    let mut img = rqrr::PreparedImage::prepare(luma);
+    for grid in img.detect_grids() {
+        let (_meta, content) = grid.decode()?;
+        println!("{content}");
     }
 
     Ok(())
