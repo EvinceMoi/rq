@@ -4,7 +4,7 @@ mod selection;
 
 use anyhow::{anyhow, Result};
 use image::RgbaImage;
-use log::debug;
+
 
 use crate::selection::wait_for_selection;
 
