@@ -5,7 +5,6 @@ mod selection;
 use anyhow::{anyhow, Result};
 use image::RgbaImage;
 
-
 use crate::selection::wait_for_selection;
 
 fn main() -> Result<()> {
@@ -28,7 +27,7 @@ fn main() -> Result<()> {
     for result in decoder.decode(&image) {
         match result {
             Ok(decoded) => {
-                println!("decoded: {decoded}")
+                println!("{decoded}");
             }
             Err(_) => {}
         }
