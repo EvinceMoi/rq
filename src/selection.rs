@@ -1,6 +1,4 @@
-use anyhow::Result;
-use image::RgbaImage;
-use log::{debug, error};
+use anyhow::{anyhow, Result};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
@@ -20,13 +18,10 @@ use smithay_client_toolkit::{
         },
         WaylandSurface,
     },
-    shm::{
-        slot::SlotPool,
-        Shm, ShmHandler,
-    },
+    shm::{slot::SlotPool, Shm, ShmHandler},
 };
 use std::time::Instant;
-use tiny_skia::{Color, Pixmap, IntRect};
+use tiny_skia::{Color, IntRect, Pixmap};
 use wayland_client::{
     globals::registry_queue_init,
     protocol::{
@@ -40,15 +35,13 @@ use wayland_client::{
     Connection, Proxy, QueueHandle,
 };
 
-use crate::capture;
-
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 struct Pos {
     x: i32,
     y: i32,
 }
 
-type Region = IntRect;
+pub type Region = IntRect;
 
 struct LayerContext {
     layer: LayerSurface,
@@ -111,13 +104,15 @@ impl Selection {
     }
     #[inline]
     pub fn to_region(&self) -> Option<Region> {
-        self.data.map(|(from, to)| {
-            let x = from.x.min(to.x);
-            let y = from.y.min(to.y);
-            let w = (from.x - to.x).abs() as u32;
-            let h = (from.y - to.y).abs() as u32;
-            Region::from_xywh(x, y, w, h)
-        }).flatten()
+        self.data
+            .map(|(from, to)| {
+                let x = from.x.min(to.x);
+                let y = from.y.min(to.y);
+                let w = (from.x - to.x).abs() as u32;
+                let h = (from.y - to.y).abs() as u32;
+                Region::from_xywh(x, y, w, h)
+            })
+            .flatten()
     }
 }
 
@@ -149,7 +144,12 @@ impl LayerState {
                 let height = ctx.region.height();
                 let (buffer, canvas) = self
                     .pool
-                    .create_buffer(width as i32, height as i32, width as i32 * 4, wl_shm::Format::Argb8888)
+                    .create_buffer(
+                        width as i32,
+                        height as i32,
+                        width as i32 * 4,
+                        wl_shm::Format::Argb8888,
+                    )
                     .expect("create buffer");
 
                 ctx.pixmap.fill(Color::from_rgba8(0x64, 0x64, 0x64, 0x80)); // bgra
@@ -228,7 +228,13 @@ impl CompositorHandler for LayerState {
     ) {
     }
 
-    fn frame(&mut self, _conn: &Connection, qh: &QueueHandle<Self>, surface: &WlSurface, _time: u32) {
+    fn frame(
+        &mut self,
+        _conn: &Connection,
+        qh: &QueueHandle<Self>,
+        surface: &WlSurface,
+        _time: u32,
+    ) {
         // frame callback
         self.selection.update(self.pos_current);
 
@@ -252,13 +258,12 @@ impl OutputHandler for LayerState {
         &mut self.output_state
     }
 
-    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {
-        // self.outputs.push(output);
-    }
+    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {}
 
     fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {}
 
-    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {}
+    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {
+    }
 }
 
 delegate_shm!(LayerState);
@@ -446,7 +451,7 @@ impl PointerHandler for LayerState {
     }
 }
 
-pub fn run() -> Result<()> {
+pub fn wait_for_selection() -> Result<Region> {
     let conn = Connection::connect_to_env()?;
     let (globals, mut event_queue) = registry_queue_init::<LayerState>(&conn)?;
     let qh = event_queue.handle();
@@ -458,7 +463,7 @@ pub fn run() -> Result<()> {
     let layer_shell = LayerShell::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
     let seat_state = SeatState::new(&globals, &qh);
-    let pool = SlotPool::new(1920 * 1080 * 4, &shm).expect("failed to create pool");
+    let pool = SlotPool::new(1920 * 1080 * 4, &shm)?;
 
     let mut layer_state = LayerState {
         registry_state,
@@ -491,7 +496,8 @@ pub fn run() -> Result<()> {
                     info.logical_position.unwrap().1,
                     info.logical_size.unwrap().0 as u32,
                     info.logical_size.unwrap().1 as u32,
-                ).unwrap();
+                )
+                .unwrap();
                 (info.name, region)
             })
             .unwrap();
@@ -517,35 +523,9 @@ pub fn run() -> Result<()> {
             break;
         }
     }
-    let region = layer_state.selection.to_region();
-    debug!("got region: {:?}", region);
 
-    region.map(|area| {
-        let capture = futures::executor::block_on(async {
-            capture::area(area.x(), area.y(), area.width(), area.height()).await
-        });
-        match capture {
-            Ok(raw) => Some(raw),
-            Err(e) => {
-                error!("capture error: {e}");
-                None
-            },
-        }
-    })
-    .flatten()
-    .map(|raw| {
-        RgbaImage::from_vec(raw.width, raw.height, raw.buf)
-    })
-    .flatten()
-    .map(|img| {
-        let decoder = bardecoder::default_decoder();
-        for result in decoder.decode(&img) {
-            match result {
-                Ok(decoded) => debug!("decoded: {decoded}"),
-                Err(_) => {},
-            }
-        }
-    });
-
-    Ok(())
+    layer_state
+        .selection
+        .to_region()
+        .ok_or(anyhow!("failed to get selection"))
 }

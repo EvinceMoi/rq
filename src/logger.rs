@@ -5,7 +5,7 @@ use std::env;
 fn do_init(level: Option<LevelFilter>) {
 	use chrono::Local;
 	use env_logger::{fmt::Color, Builder};
-	use log::{Level};
+	use log::Level;
 	use std::io::Write;
 
 	let mut logger = Builder::from_default_env();
