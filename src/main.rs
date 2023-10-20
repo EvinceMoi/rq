@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     for result in decoder.decode(&image) {
         match result {
             Ok(decoded) => {
-                debug!("decoded: {decoded}")
+                println!("decoded: {decoded}")
             }
             Err(_) => {}
         }

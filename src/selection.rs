@@ -8,7 +8,9 @@ use smithay_client_toolkit::{
     registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Keysym},
-        pointer::{PointerEvent, PointerEventKind, PointerHandler, BTN_LEFT},
+        pointer::{
+            PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer, BTN_LEFT, CursorIcon,
+        },
         Capability, SeatHandler, SeatState,
     },
     shell::{
@@ -118,6 +120,7 @@ impl Selection {
 
 struct LayerState {
     registry_state: RegistryState,
+    compositor_state: CompositorState,
     shm: Shm,
     output_state: OutputState,
     seat_state: SeatState,
@@ -125,7 +128,8 @@ struct LayerState {
     pool: SlotPool,
     layer: Vec<LayerContext>,
     keyboard: Option<WlKeyboard>,
-    pointer: Option<WlPointer>,
+    // pointer: Option<WlPointer>,
+    pointer: Option<ThemedPointer>,
 
     exit: bool,
     pos_pressed: Option<Pos>,
@@ -134,8 +138,11 @@ struct LayerState {
     last_draw: Instant,
 }
 impl LayerState {
-    pub fn draw(&mut self, qh: &QueueHandle<Self>, surface: &WlSurface) {
+    pub fn draw(&mut self, conn: &Connection, qh: &QueueHandle<Self>, surface: &WlSurface) {
         self.last_draw = Instant::now();
+        self.pointer.as_mut().map(|p| {
+            let _ = p.set_cursor(conn, CursorIcon::Crosshair);
+        });
         self.layer
             .iter_mut()
             .find(|layer| layer.layer.wl_surface().id().eq(&surface.id()))
@@ -230,7 +237,7 @@ impl CompositorHandler for LayerState {
 
     fn frame(
         &mut self,
-        _conn: &Connection,
+        conn: &Connection,
         qh: &QueueHandle<Self>,
         surface: &WlSurface,
         _time: u32,
@@ -248,7 +255,7 @@ impl CompositorHandler for LayerState {
                     (interval - elapsed_ms) as u64,
                 ));
             }
-            self.draw(qh, surface);
+            self.draw(conn, qh, surface);
         }
     }
 }
@@ -280,14 +287,14 @@ impl LayerShellHandler for LayerState {
 
     fn configure(
         &mut self,
-        _conn: &Connection,
+        conn: &Connection,
         qh: &QueueHandle<Self>,
         layer: &LayerSurface,
         _configure: LayerSurfaceConfigure,
         _serial: u32,
     ) {
         // start firer draw here
-        self.draw(qh, layer.wl_surface());
+        self.draw(conn, qh, layer.wl_surface());
     }
 }
 delegate_seat!(LayerState);
@@ -313,9 +320,10 @@ impl SeatHandler for LayerState {
             self.keyboard = Some(keyboard);
         }
         if capability == Capability::Pointer && self.pointer.is_none() {
+            let surface = self.compositor_state.create_surface(qh);
             let pointer = self
                 .seat_state
-                .get_pointer(qh, &seat)
+                .get_pointer_with_theme(qh, &seat, self.shm.wl_shm(), surface, ThemeSpec::default())
                 .expect("Failed to create pointer");
             self.pointer = Some(pointer);
         }
@@ -335,7 +343,7 @@ impl SeatHandler for LayerState {
 
         if capability == Capability::Pointer && self.pointer.is_some() {
             println!("Unset pointer capability");
-            self.pointer.take().unwrap().release();
+            self.pointer.take().unwrap().pointer().release();
         }
     }
 
@@ -459,7 +467,7 @@ pub fn wait_for_selection() -> Result<Region> {
     let registry_state = RegistryState::new(&globals);
     let output_state = OutputState::new(&globals, &qh);
 
-    let compositor = CompositorState::bind(&globals, &qh)?;
+    let compositor_state = CompositorState::bind(&globals, &qh)?;
     let layer_shell = LayerShell::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
     let seat_state = SeatState::new(&globals, &qh);
@@ -467,6 +475,7 @@ pub fn wait_for_selection() -> Result<Region> {
 
     let mut layer_state = LayerState {
         registry_state,
+        compositor_state,
         shm,
         output_state,
         seat_state,
@@ -475,7 +484,7 @@ pub fn wait_for_selection() -> Result<Region> {
         layer: Vec::new(),
         keyboard: None,
         pointer: None,
-
+        // themed_pointer: None,
         exit: false,
         pos_pressed: None,
         pos_current: Default::default(),
@@ -501,7 +510,7 @@ pub fn wait_for_selection() -> Result<Region> {
                 (info.name, region)
             })
             .unwrap();
-        let surface = compositor.create_surface(&qh);
+        let surface = layer_state.compositor_state.create_surface(&qh);
         let layer =
             layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, name, Some(&output));
         layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
