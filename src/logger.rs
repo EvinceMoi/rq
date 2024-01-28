@@ -4,33 +4,34 @@ use std::env;
 
 fn do_init(level: Option<LevelFilter>) {
     use chrono::Local;
-    use env_logger::{fmt::Color, Builder};
-    use log::Level;
+    use env_logger::{fmt::style::{Style, Reset}, Builder};
     use std::io::Write;
 
     let mut logger = Builder::from_default_env();
     logger.format(|buf, record| {
-        let mut style = buf.style();
-        let level_color = match record.level() {
-            Level::Error => Color::Red,
-            Level::Warn => Color::Yellow,
-            Level::Info => Color::Green,
-            Level::Debug => Color::Blue,
-            Level::Trace => Color::Cyan,
-        };
-        style.set_color(level_color);
-
-        let mut dim = buf.style();
-        dim.set_dimmed(true);
+        let level_style = buf.default_level_style(record.level());
+        let dim = Style::new().dimmed();
 
         writeln!(
             buf,
-            "{}{} {: <5} {}{} {}",
-            dim.value("["),
-            dim.value(Local::now().format("%Y-%m-%d %H:%M:%S%.3f")),
-            style.value(record.level()),
-            dim.value(record.target()),
-            dim.value("]"),
+            "{}{}{}{}{}{} {}{: <5}{}{}{}{} {}",
+
+            dim.render(),
+            "[",
+            Reset.render(),
+
+            dim.render(),
+            Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+            Reset.render(),
+
+            level_style.render(),
+            record.level(),
+            Reset.render(),
+
+            dim.render(),
+            "]",
+            Reset.render(),
+
             record.args()
         )
     });

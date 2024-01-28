@@ -293,7 +293,7 @@ impl LayerShellHandler for LayerState {
         _configure: LayerSurfaceConfigure,
         _serial: u32,
     ) {
-        // start firer draw here
+        // start first draw here
         self.draw(conn, qh, layer.wl_surface());
     }
 }
