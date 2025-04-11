@@ -6,11 +6,11 @@ use std::{
     fs::File,
     future::Future,
     io::{self, Read},
-    os::fd::FromRawFd,
+    os::fd::{FromRawFd, OwnedFd},
 };
 use zbus::{
-    dbus_proxy,
-    zvariant::{Fd, OwnedValue, Value},
+    proxy,
+    zvariant::{Fd, OwnedValue, Value, Error},
     Connection,
 };
 
@@ -21,12 +21,12 @@ pub struct RawCaptured {
     pub buf: Vec<u8>,
 }
 
-#[dbus_proxy(
+#[proxy(
     default_service = "org.kde.KWin.ScreenShot2",
     interface = "org.kde.KWin.ScreenShot2",
     default_path = "/org/kde/KWin/ScreenShot2"
 )]
-trait KWin {
+trait KWin<'_> {
     /// options:
     ///     include-decoration: bool
     ///     include-cursor: bool
@@ -38,52 +38,52 @@ trait KWin {
         width: u32,
         height: u32,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 
     fn capture_active_screen(
         &self,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 
     fn capture_screen(
         &self,
         name: &str,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 
     fn capture_active_window(
         &self,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 
     fn capture_window(
         &self,
         handle: &str,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 
     fn capture_workspace(
         &self,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 
     fn capture_interactive(
         &self,
         kind: u32,
         options: HashMap<&str, &Value<'_>>,
-        pipe: Fd,
+        pipe: Fd<'_>,
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 }
 
 async fn with_kwin<F, Fut>(f: F) -> Result<RawCaptured>
 where
-    F: FnOnce(Connection, Fd) -> Fut,
+    F: FnOnce(Connection, OwnedFd) -> Fut,
     Fut: Future<Output = zbus::Result<HashMap<String, OwnedValue>>>,
 {
     let conn = Connection::session().await?;
@@ -92,7 +92,8 @@ where
     if res != 0 {
         return Err(io::Error::last_os_error().into());
     }
-    let captured = f(conn, fds[1].into()).await?;
+    let fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+    let captured = f(conn, fd).await?;
     unsafe {
         libc::close(fds[1]);
     }
@@ -101,6 +102,7 @@ where
     where
         T: Clone,
         &'a T: TryFrom<&'a Value<'a>> + 'a,
+        <&'a T as TryFrom<&'a Value<'a>>>::Error: Into<Error>,
     {
         captured
             .get(key)
@@ -140,7 +142,7 @@ pub async fn workspace() -> Result<RawCaptured> {
     let options = HashMap::from([("native-resolution", &native_resolution)]);
     let img = with_kwin(|conn, fd| async move {
         let proxy = KWinProxy::new(&conn).await?;
-        proxy.capture_workspace(options, fd).await
+        proxy.capture_workspace(options, fd.into()).await
     })
     .await?;
     Ok(img)
@@ -151,7 +153,7 @@ pub async fn area(x: i32, y: i32, w: u32, h: u32) -> Result<RawCaptured> {
     let options = HashMap::from([("native-resolution", &native_resolution)]);
     let img = with_kwin(|conn, fd| async move {
         let proxy = KWinProxy::new(&conn).await?;
-        proxy.capture_area(x, y, w, h, options, fd).await
+        proxy.capture_area(x, y, w, h, options, fd.into()).await
     })
     .await?;
     Ok(img)
@@ -162,7 +164,7 @@ pub async fn screen(name: &str) -> Result<RawCaptured> {
     let options = HashMap::from([("native-resolution", &native_resolution)]);
     let img = with_kwin(|conn, fd| async move {
         let proxy = KWinProxy::new(&conn).await?;
-        proxy.capture_screen(name, options, fd).await
+        proxy.capture_screen(name, options, fd.into()).await
     })
     .await?;
     Ok(img)

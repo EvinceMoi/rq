@@ -258,6 +258,24 @@ impl CompositorHandler for LayerState {
             self.draw(conn, qh, surface);
         }
     }
+    
+    fn surface_enter(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wayland_client::protocol::wl_surface::WlSurface,
+        _output: &wayland_client::protocol::wl_output::WlOutput,
+    ) {
+    }
+    
+    fn surface_leave(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _surface: &wayland_client::protocol::wl_surface::WlSurface,
+        _output: &wayland_client::protocol::wl_output::WlOutput,
+    ) {
+    }
 }
 delegate_output!(LayerState);
 impl OutputHandler for LayerState {
@@ -404,6 +422,7 @@ impl KeyboardHandler for LayerState {
         _keyboard: &wayland_client::protocol::wl_keyboard::WlKeyboard,
         _serial: u32,
         _modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
+        _layout: u32,
     ) {
     }
 }
